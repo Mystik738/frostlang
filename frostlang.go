@@ -33,47 +33,50 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 		for _, filename := range files {
 			if _, err := os.Stat(dir + filename[:strings.Index(filename, ".")] + ".json"); overwrite || err != nil {
 				content, err := ioutil.ReadFile(dir + filename)
-				content = content[8:]
-				checkError(err)
+				//Some versions have partial files, this checks for those and ignores them
+				if len(content) > 8 {
+					content = content[8:]
+					checkError(err)
 
-				//Initialize our data structure.
-				data := NewNode("")
+					//Initialize our data structure.
+					data := NewNode("")
 
-				//File is as follows: 8 unknown bytes followed by entries of the following, all little endian:
-				// 2 bytes for tag length
-				// Tag of length {2 byte val}
-				// 2 bytes for text length
-				// Text of length {2 byte val}*2. Text is encoded in 16-bit values, hence the double byte
-				i := 0
-				for i < len(content) {
-					tagLength := binary.LittleEndian.Uint16(content[i : i+2])
-					i += 2
-					tagString := content[i : i+int(tagLength)]
-					//Tags are split by '/'
-					tags := bytes.Split(tagString, []byte{byte(47)})
-					i += int(tagLength)
-					textLength := binary.LittleEndian.Uint16(content[i : i+2])
-					i += 2
-					splittext := content[i : i+int(textLength*2)]
-					i += int(textLength * 2)
+					//File is as follows: 8 unknown bytes followed by entries of the following, all little endian:
+					// 2 bytes for tag length
+					// Tag of length {2 byte val}
+					// 2 bytes for text length
+					// Text of length {2 byte val}*2. Text is encoded in 16-bit values, hence the double byte
+					i := 0
+					for i < len(content) {
+						tagLength := binary.LittleEndian.Uint16(content[i : i+2])
+						i += 2
+						tagString := content[i : i+int(tagLength)]
+						//Tags are split by '/'
+						tags := bytes.Split(tagString, []byte{byte(47)})
+						i += int(tagLength)
+						textLength := binary.LittleEndian.Uint16(content[i : i+2])
+						i += 2
+						splittext := content[i : i+int(textLength*2)]
+						i += int(textLength * 2)
 
-					//Once we get all our text, we need to decode each 16-bit value
-					text := ""
-					for c := 0; c < len(splittext); c += 2 {
-						val := binary.LittleEndian.Uint16(splittext[c:(c + 2)])
-						text += string(val)
+						//Once we get all our text, we need to decode each 16-bit value
+						text := ""
+						for c := 0; c < len(splittext); c += 2 {
+							val := binary.LittleEndian.Uint16(splittext[c:(c + 2)])
+							text += string(val)
+						}
+
+						//We have our tags and text, add to our data structure.
+						data.Add(tags, text)
 					}
 
-					//We have our tags and text, add to our data structure.
-					data.Add(tags, text)
+					file, err := os.Create(dir + filename[:strings.Index(filename, ".")] + ".json")
+					checkError(err)
+
+					file.WriteString(data.ToJSON())
+					err = file.Close()
+					checkError(err)
 				}
-
-				file, err := os.Create(dir + filename[:strings.Index(filename, ".")] + ".json")
-				checkError(err)
-
-				file.WriteString(data.ToJSON())
-				err = file.Close()
-				checkError(err)
 			}
 		}
 	}
