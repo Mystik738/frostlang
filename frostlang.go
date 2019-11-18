@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 //ConvertLangToJSON converts all lang files in a directory to json
@@ -35,6 +36,7 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 				content, err := ioutil.ReadFile(dir + filename)
 				//Some versions have partial files, this checks for those and ignores them
 				if len(content) > 8 {
+					//We don't care about the metadata
 					content = content[8:]
 					checkError(err)
 
@@ -47,6 +49,7 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 					// 2 bytes for text length
 					// Text of length {2 byte val}*2. Text is encoded in 16-bit values, hence the double byte
 					i := 0
+					elements := 0
 					for i < len(content) {
 						tagLength := binary.LittleEndian.Uint16(content[i : i+2])
 						i += 2
@@ -68,6 +71,7 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 
 						//We have our tags and text, add to our data structure.
 						data.Add(tags, text)
+						elements++
 					}
 
 					file, err := os.Create(dir + filename[:strings.Index(filename, ".")] + ".json")
@@ -80,6 +84,98 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 			}
 		}
 	}
+}
+
+//ConvertJSONToLang converts all json files in a directory to lang
+func ConvertJSONToLang(dir string, overwrite bool) {
+	if dir[len(dir)-1:] != "/" {
+		dir = dir + "/"
+	}
+
+	var files []string
+	if _, err := os.Stat(dir); err == nil {
+		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			if filepath.Ext(path) != ".json" {
+				return nil
+			}
+
+			files = append(files, info.Name())
+			return nil
+		})
+		for _, filename := range files {
+			if _, err := os.Stat(dir + filename[:strings.Index(filename, ".")] + ".lang"); overwrite || err != nil {
+				content, err := ioutil.ReadFile(dir + filename)
+				checkError(err)
+
+				var result map[string]interface{}
+				json.Unmarshal([]byte(content), &result)
+
+				langText, entries := jsonToLang(make([]string, 0), result)
+
+				file, err := os.Create(dir + filename[:strings.Index(filename, ".")] + ".lang")
+				checkError(err)
+
+				// Write first 8 bytes
+				// 0-3 : Size of content + 4
+				// 5-8 : number of entries
+
+				headerContent := make([]byte, 4)
+				binary.LittleEndian.PutUint32(headerContent, uint32(len(langText)+4))
+				headerEntries := make([]byte, 4)
+				binary.LittleEndian.PutUint32(headerEntries, uint32(entries))
+
+				file.Write(headerContent)
+				file.Write(headerEntries)
+				file.Write(langText)
+				err = file.Close()
+				checkError(err)
+			}
+		}
+	}
+}
+
+//Helper function to convert partially traversed JSON to Lang format.
+func jsonToLang(parentTags []string, innerJson interface{}) ([]byte, int) {
+	langText := make([]byte, 0)
+	entries := 0
+	if text, ok := innerJson.(string); ok {
+		tagBytes := []byte(strings.Join(parentTags, "/"))
+		tagLength := make([]byte, 2)
+		binary.LittleEndian.PutUint16(tagLength, uint16(len(tagBytes)))
+
+		langText = append(langText, tagLength...)
+		langText = append(langText, tagBytes...)
+
+		runeCount := 0
+		runeText := make([]byte, 0)
+
+		for i, w := 0, 0; i < len(text); i += w {
+			runeCount++
+			runeValue, width := utf8.DecodeRuneInString(text[i:])
+			char := make([]byte, 2)
+			binary.LittleEndian.PutUint16(char, uint16(runeValue))
+			runeText = append(runeText, char...)
+			w = width
+		}
+
+		textLength := make([]byte, 2)
+		binary.LittleEndian.PutUint16(textLength, uint16(runeCount))
+		langText = append(langText, textLength...)
+
+		langText = append(langText, runeText...)
+		entries += 1
+	} else if subJson, ok := innerJson.(map[string]interface{}); ok {
+		for tag, text := range subJson {
+			subLang, subEntries := jsonToLang(append(parentTags, tag), text)
+			langText = append(langText, subLang...)
+			entries += subEntries
+		}
+	}
+
+	return langText, entries
 }
 
 //Node are strucutres that should have Text or Children, but not both
