@@ -14,10 +14,6 @@ import (
 
 //ConvertLangToJSON converts all lang files in a directory to json
 func ConvertLangToJSON(dir string, overwrite bool) {
-	if dir[len(dir)-1:] != "/" {
-		dir = dir + "/"
-	}
-
 	var files []string
 	if _, err := os.Stat(dir); err == nil {
 		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -32,8 +28,8 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 			return nil
 		})
 		for _, filename := range files {
-			if _, err := os.Stat(dir + filename[:strings.Index(filename, ".")] + ".json"); overwrite || err != nil {
-				content, err := ioutil.ReadFile(dir + filename)
+			if _, err := os.Stat(filepath.Join(dir, filename[:strings.Index(filename, ".")]+".json")); overwrite || err != nil {
+				content, err := ioutil.ReadFile(filepath.Join(dir, filename))
 				//Some versions have partial files, this checks for those and ignores them
 				if len(content) > 8 {
 					//We don't care about the metadata
@@ -74,7 +70,7 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 						elements++
 					}
 
-					file, err := os.Create(dir + filename[:strings.Index(filename, ".")] + ".json")
+					file, err := os.Create(filepath.Join(dir, filename[:strings.Index(filename, ".")]+".json"))
 					checkError(err)
 
 					file.WriteString(data.ToJSON())
@@ -88,10 +84,6 @@ func ConvertLangToJSON(dir string, overwrite bool) {
 
 //ConvertJSONToLang converts all json files in a directory to lang
 func ConvertJSONToLang(dir string, overwrite bool) {
-	if dir[len(dir)-1:] != "/" {
-		dir = dir + "/"
-	}
-
 	var files []string
 	if _, err := os.Stat(dir); err == nil {
 		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -106,8 +98,8 @@ func ConvertJSONToLang(dir string, overwrite bool) {
 			return nil
 		})
 		for _, filename := range files {
-			if _, err := os.Stat(dir + filename[:strings.Index(filename, ".")] + ".lang"); overwrite || err != nil {
-				content, err := ioutil.ReadFile(dir + filename)
+			if _, err := os.Stat(filepath.Join(dir, filename[:strings.Index(filename, ".")]+".lang")); overwrite || err != nil {
+				content, err := ioutil.ReadFile(filepath.Join(dir, filename))
 				checkError(err)
 
 				var result map[string]interface{}
@@ -115,7 +107,7 @@ func ConvertJSONToLang(dir string, overwrite bool) {
 
 				langText, entries := jsonToLang(make([]string, 0), result)
 
-				file, err := os.Create(dir + filename[:strings.Index(filename, ".")] + ".lang")
+				file, err := os.Create(filepath.Join(dir, filename[:strings.Index(filename, ".")]+".lang"))
 				checkError(err)
 
 				// Write first 8 bytes
